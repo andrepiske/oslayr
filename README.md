@@ -47,6 +47,7 @@ The return value is an userdata with the following functions:
     close()
     waitend()
     getpipesize()
+    close_input()
 
 * **out()** will read the program stdout up to *len* bytes and will return two values. The first is how many bytes has been read and the second is the bytes read (a string). The first return value may be zero or lower. When zero, end-of-file has been reached. When negative, an error occured.
 
@@ -64,9 +65,31 @@ The return value is an userdata with the following functions:
 
 * **getpipesize()** Returns three values (integers): The size (in bytes, in this order) of the stdin, stdout and stderr pipes. See caveats section below.
 
+* **close_input()** Closes the stdin pipe. This will issue and end-of-file for the program reading the stdin.
+
 **Examples**
 
-Example 1. Shows the waitend() funcionality:
+Example 1. Parsing some text with some program:
+
+    require('oslayr')
+    local T = [[
+    Save the foos!
+    But shoot the bars!
+    ]]
+    local f = oslayr.exec('m4', {'m4', '-Dfoos=Whales', '-Dbars=Seals'})
+    f:put(T)
+    f:close_input()
+    f:waitend()
+    local l,c = f:out(65536)
+    f:close()
+    print(c)
+
+Output:
+
+    Save the Whales!
+    But shoot the Seals!
+
+Example 2. Shows the waitend() funcionality:
 
     require('oslayr')
     local f = oslayr.exec('false', {'false'})
@@ -76,7 +99,7 @@ Ouput:
 
     1
 
-Example 2. Shows interactive usage:
+Example 3. Shows interactive usage:
 
     require('oslayr')
     local f = oslayr.exec('cat', {'cat', '-e'})

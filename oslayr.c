@@ -166,17 +166,30 @@ _f_waitend(lua_State *L) {
 static int
 _f_close(lua_State *L) {
     struct s_exec *se = _get_exec(L);
-    if (!se->pin[1])
+    if (!se->bufferout)
         return luaL_error(L, "You may not call close() twice");
 
-    close(se->pin[1]);
-    close(se->pout[0]);
-    close(se->perr[0]);
+    if (se->pin[1] >= 0) close(se->pin[1]);
+    if (se->pout[0] >= 0) close(se->pout[0]);
+    if (se->perr[0] >= 0) close(se->perr[0]);
     if (se->bufferout)
         free(se->bufferout);
-    memset(se + (ptrdiff_t)sizeof(pid_t), 0, sizeof(struct s_exec) - sizeof(pid_t));
+    se->bufferout = 0;
+    se->bosize = 0;
+    se->pin[1] = se->pout[0] = se->perr[0] = -1;
     return 0;
 }
+
+static int
+_f_closeinput(lua_State *L) {
+    struct s_exec *se = _get_exec(L);
+    if (se->pin[1] >= 0)
+        close(se->pin[1]);
+
+    se->pin[1] = -1;
+    return 0;
+}
+
 
 /*static int
 exec_fin_bufferout
@@ -204,6 +217,7 @@ exec_initmetatable(lua_State *L) {
         // {"bufferout", _f_set_bufferout},
         {"put", _f_put},
         {"close", _f_close},
+        {"close_input", _f_closeinput},
         {"waitend", _f_waitend},
         {"getpipesize", _f_get_pipesize},
         {0, 0}
