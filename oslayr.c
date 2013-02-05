@@ -46,6 +46,7 @@ struct s_exec {
     int perr[2];
     void *bufferout;
     size_t bosize; // , boused;
+    int closed : 1;
     // int do_bufferout;
     // pthread_mutex *bo_mx;
 };
@@ -166,7 +167,7 @@ _f_waitend(lua_State *L) {
 static int
 _f_close(lua_State *L) {
     struct s_exec *se = _get_exec(L);
-    if (!se->bufferout)
+    if (se->closed)
         return luaL_error(L, "You may not call close() twice");
 
     if (se->pin[1] >= 0) close(se->pin[1]);
@@ -177,6 +178,7 @@ _f_close(lua_State *L) {
     se->bufferout = 0;
     se->bosize = 0;
     se->pin[1] = se->pout[0] = se->perr[0] = -1;
+    se->closed = 1;
     return 0;
 }
 
@@ -322,6 +324,7 @@ _f_exec(lua_State *L) {
         lua_setmetatable(L, -2);
         se->bufferout = 0;
         se->bosize = 0;
+        se->closed = 0;
         // se->boused = 0;
         // se->do_bufferout = 0;
         // se->bo_mx = 0;
