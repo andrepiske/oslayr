@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/select.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -103,6 +104,88 @@ _f_read_out(lua_State *L) {
 
     lua_pushlstring(L, se->bufferout, r);
     return 2;
+}
+
+static int
+_f_poll(lua_State *L) {
+    struct s_exec *se = _get_exec(L);
+    double timeout = 0.0;
+
+    if (lua_isnumber(L, 2)) {
+        timeout = (double)lua_tonumber(L, 2);
+        if (timeout < 0.0)
+            return luaL_error(L, "Timeout must be non-negative");
+    }
+
+    unsigned long int to_us = (unsigned long int)(timeout * 1000.0);
+
+    struct timeval tv;
+    tv.tv_sec = to_us / 1000000;
+    tv.tv_usec = to_us % 1000000;
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(se->pout[0], &read_fds);
+    FD_SET(se->perr[0], &read_fds);
+    const int fd = se->pout[0] > se->perr[0] ? se->pout[0] : se->perr[0];
+    const int e = select(fd + 1, &read_fds, 0, 0, &tv);
+    if (e < 0)
+        return luaL_error(L, "select() error");
+
+    lua_pushboolean(L, FD_ISSET(se->pout[0], &read_fds) ? 1 : 0);
+    lua_pushboolean(L, FD_ISSET(se->perr[0], &read_fds) ? 1 : 0);
+    return 2;
+}
+        
+// read(f, read limit, stdout or stderr, non-blocking?)
+static int
+_f_read(lua_State *L) {
+    struct s_exec *se = _get_exec(L);
+    int read_limit = 1024;
+    int fd = se->pout[0];
+    int is_blocking = 1;
+
+    if (!lua_isnil(L, 2)) {
+        read_limit = (int)lua_tonumber(L, 2);
+        if (read_limit < 0)
+            return luaL_error(L, "Read limit must be non-negative");
+    }
+
+    if (!lua_isnil(L, 3)) {
+        const int e = (int)lua_tonumber(L, 3);
+        if (e == 2)
+            fd = se->perr[0];
+        else if (e != 1)
+            return luaL_error(L, "Invalid read source (must be 1 or 2)");
+    }
+
+    if (lua_toboolean(L, 4))
+        is_blocking = 0;
+
+    if (!is_blocking) {
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        const int e = select(fd + 1, &read_fds, 0, 0, &tv);
+        if (e < 0)
+            return luaL_error(L, "select() error");
+        if (!e) {
+            lua_pushboolean(L, 0);
+            return 1;
+        }
+    }
+
+    _exec_assert_bs(se, (size_t)read_limit);
+
+    const ssize_t total_read = read(fd, se->bufferout, read_limit);
+    lua_pushboolean(L, 1);
+    lua_pushnumber(L, (lua_Number)total_read);
+    if (total_read)
+        lua_pushlstring(L, (const char*)se->bufferout, (size_t)total_read);
+
+    return total_read ? 3 : 2;
 }
 
 static int
@@ -217,6 +300,8 @@ exec_initmetatable(lua_State *L) {
     const luaL_Reg lr[] = {
         {"out", _f_read_out},
         // {"bufferout", _f_set_bufferout},
+        {"read", _f_read},
+        {"poll", _f_poll},
         {"put", _f_put},
         {"close", _f_close},
         {"close_input", _f_closeinput},
@@ -257,6 +342,9 @@ exec_openprocess(const char *exname, const char**cmds, struct s_exec *se) {
     if (!se->pid) {
         char *const *ncmds = (char*const *)cmds; // it's a copy, it's another process.
         close(pe[0]);
+        close(0),
+        close(1),
+        close(2),
         dup2(se->pin[0], 0);
         dup2(se->pout[1], 1);
         dup2(se->perr[1], 2);

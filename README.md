@@ -3,7 +3,7 @@ lua OS Layer
 
 Execute processes in lua with bidirectional pipes for stdin and stdout (no stderr yet). Just because io.popen() is not bidirectional.
 
-Linux only, but I plan to port this to Windows someday. 
+Linux only, but I *plan to port this to Windows someday* </sup>(TM)</sup>. 
 
 
 Issues & feature request: "Issues" page on github.
@@ -42,12 +42,14 @@ Note that arguments[1] will be the command`s argv[0] and so on.
 
 The return value is an userdata with the following functions:
 
-    out([len; default=1024])
+    out([len=1024])
     put(content, [offset], [len])
     close()
     waitend()
     getpipesize()
     close_input()
+    read(read_limit=1024, [source=1], [non-blocking=false])
+    poll([timeout=0])
 
 * **out()** will read the program stdout up to *len* bytes and will return two values. The first is how many bytes has been read and the second is the bytes read (a string). The first return value may be zero or lower. When zero, end-of-file has been reached. When negative, an error occured.
 
@@ -66,6 +68,10 @@ The return value is an userdata with the following functions:
 * **getpipesize()** Returns three values (integers): The size (in bytes, in this order) of the stdin, stdout and stderr pipes. See caveats section below.
 
 * **close_input()** Closes the stdin pipe. This will issue and end-of-file for the program reading the stdin.
+
+* **read()** Reads from the process' stdout or stderr. This is more flexible version of *out()*. read\_limit is the *maximum* number of bytes to be read. source is the where to read from, either 1 or 2. 1 stands for stdout and 2 for stderr. No other values are allowed. non-blocking should be true or false. If true, it won't ever block. This means that if no input is available at all, it won't wait for some. It will return a 3-uple (success, count, data). _success_ is a boolean telling whether something has been read. It'll only be false on non-blocking calls when no input is available. The _count_ is a non-negative integer with the number of bytes read. This value may be zero, as for EOF. _data_ is a string with the read data, or nil in case _success_ equals false. **NOTE** Calling this function with non-blocking to false will return immediately if __any__ data is available to read; it won't wait to read all _read\_limit_ bytes. i.e., suppose one calls read(10, 1, false) and only 5 is available in stdout. The function will return immediately.
+
+* **poll()** Checks whether input is available to be read. Returns a tuple (stdout, stderr) of booleans telling which is good to read. The timeout parameter must be a non-negative value. It specifies the timeout, in milliseconds, to wait. The timeout precision is microseconds, so one may use a value of "0.07" to wait 70 microsecnds.
 
 **Examples**
 
